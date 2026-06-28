@@ -3,7 +3,8 @@
 const SUPABASE_URL = 'https://ntbjaofhajysvfekvjqy.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ymphb2ZoYWp5c3ZmZWt2anF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NTc1NDgsImV4cCI6MjA5ODIzMzU0OH0.8J5fgummw2n-eYQtcZj31RnlDdyCP1wbhUJ8XYpkkKs';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Initialize client safely
+const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const SESSION_KEY = 'mrh_current_user';
 
 function getCurrentUser() {
@@ -21,104 +22,144 @@ function logout() {
 }
 
 async function login(username, password) {
-    const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('username', username)
-        .eq('password', password)
-        .single();
+    if (!supabaseClient) return false;
+    try {
+        const { data, error } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .eq('password', password);
 
-    if (error || !data) {
+        if (error || !data || data.length === 0) {
+            console.error('Login error:', error);
+            return false;
+        }
+
+        const u = data[0];
+        const userObj = {
+            id: u.id,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            username: u.username,
+            email: u.email,
+            mobile: u.mobile,
+            role: u.role
+        };
+
+        setCurrentUser(userObj);
+
+        if (userObj.role === 'admin') {
+            window.location.href = 'admin_dashboard.html';
+        } else {
+            window.location.href = 'dashboard.html';
+        }
+        return true;
+    } catch (err) {
+        console.error('Login exception:', err);
         return false;
     }
-
-    const userObj = {
-        id: data.id,
-        firstName: data.first_name,
-        lastName: data.last_name,
-        username: data.username,
-        email: data.email,
-        mobile: data.mobile,
-        role: data.role
-    };
-
-    setCurrentUser(userObj);
-
-    if (userObj.role === 'admin') {
-        window.location.href = 'admin_dashboard.html';
-    } else {
-        window.location.href = 'dashboard.html';
-    }
-    return true;
 }
 
 async function signup(formData) {
-    // Check duplicates
-    const { data: existing } = await supabase
-        .from('users')
-        .select('id')
-        .or(`username.eq.${formData.username},email.eq.${formData.email}`);
-
-    if (existing && existing.length > 0) {
-        return { success: false, message: 'Username or email already exists online.' };
+    if (!supabaseClient) {
+        return { success: false, message: 'Supabase library failed to load in browser.' };
     }
+    try {
+        // Check duplicates safely
+        const { data: uCheck, error: uErr } = await supabaseClient
+            .from('users')
+            .select('id')
+            .eq('username', formData.username);
 
-    const { data, error } = await supabase
-        .from('users')
-        .insert([{
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            username: formData.username,
-            email: formData.email,
-            mobile: formData.mobile,
-            password: formData.password,
-            role: 'user'
-        }])
-        .select()
-        .single();
+        if (uErr) {
+            console.error('Table check error:', uErr);
+            return { success: false, message: 'Database error: Did you create the "users" table in Supabase SQL Editor?' };
+        }
 
-    if (error || !data) {
-        return { success: false, message: 'Online registration failed. Please check your Supabase tables.' };
+        if (uCheck && uCheck.length > 0) {
+            return { success: false, message: 'Username is already taken.' };
+        }
+
+        const { data: eCheck } = await supabaseClient
+            .from('users')
+            .select('id')
+            .eq('email', formData.email);
+
+        if (eCheck && eCheck.length > 0) {
+            return { success: false, message: 'Email address is already registered.' };
+        }
+
+        // Insert new user
+        const { data, error } = await supabaseClient
+            .from('users')
+            .insert([{
+                first_name: formData.firstName,
+                last_name: formData.lastName,
+                username: formData.username,
+                email: formData.email,
+                mobile: formData.mobile,
+                password: formData.password,
+                role: 'user'
+            }])
+            .select();
+
+        if (error || !data || data.length === 0) {
+            console.error('Insert error:', error);
+            return { success: false, message: `Failed to save account: ${error ? error.message : 'Unknown error'}` };
+        }
+
+        const u = data[0];
+        const userObj = {
+            id: u.id,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            username: u.username,
+            email: u.email,
+            mobile: u.mobile,
+            role: u.role
+        };
+
+        setCurrentUser(userObj);
+        window.location.href = 'dashboard.html';
+        return { success: true };
+    } catch (err) {
+        console.error('Signup exception:', err);
+        return { success: false, message: 'An unexpected error occurred while connecting to Supabase.' };
     }
-
-    const userObj = {
-        id: data.id,
-        firstName: data.first_name,
-        lastName: data.last_name,
-        username: data.username,
-        email: data.email,
-        mobile: data.mobile,
-        role: data.role
-    };
-
-    setCurrentUser(userObj);
-    window.location.href = 'dashboard.html';
-    return { success: true };
 }
 
 async function createReport(reportData, imageFile, callback) {
     const user = getCurrentUser();
-    if (!user) return;
+    if (!user || !supabaseClient) {
+        callback({ success: false });
+        return;
+    }
 
     const processSave = async (base64Img) => {
-        const { error } = await supabase
-            .from('reports')
-            .insert([{
-                user_id: user.id,
-                citizen_name: `${user.firstName} ${user.lastName}`,
-                citizen_contact: user.mobile || user.email,
-                issue_type: reportData.issueType,
-                location: reportData.location,
-                description: reportData.description,
-                image: base64Img || null,
-                status: 'Pending',
-                date: new Date().toISOString().split('T')[0]
-            }]);
+        try {
+            const { error } = await supabaseClient
+                .from('reports')
+                .insert([{
+                    user_id: user.id,
+                    citizen_name: `${user.firstName} ${user.lastName}`,
+                    citizen_contact: user.mobile || user.email,
+                    issue_type: reportData.issueType,
+                    location: reportData.location,
+                    description: reportData.description,
+                    image: base64Img || null,
+                    status: 'Pending',
+                    date: new Date().toISOString().split('T')[0]
+                }]);
 
-        if (error) {
+            if (error) {
+                console.error('Report save error:', error);
+                callback({ success: false });
+            } else {
+                callback({ success: true });
+            }
+        } catch (err) {
+            console.error('Report save exception:', err);
             callback({ success: false });
-        } else {
-            callback({ success: true });
         }
     };
 
@@ -134,19 +175,36 @@ async function createReport(reportData, imageFile, callback) {
 }
 
 async function getReports(userId = null) {
-    let query = supabase.from('reports').select('*').order('created_at', { ascending: false });
-    if (userId) {
-        query = query.eq('user_id', userId);
+    if (!supabaseClient) return [];
+    try {
+        let query = supabaseClient.from('reports').select('*').order('created_at', { ascending: false });
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+        const { data, error } = await query;
+        if (error) {
+            console.error('Get reports error:', error);
+            return [];
+        }
+        return data || [];
+    } catch (err) {
+        console.error('Get reports exception:', err);
+        return [];
     }
-    const { data, error } = await query;
-    return data || [];
 }
 
 async function updateReportStatus(reportId, newStatus) {
-    const { error } = await supabase
-        .from('reports')
-        .update({ status: newStatus })
-        .eq('id', reportId);
+    if (!supabaseClient) return false;
+    try {
+        const { error } = await supabaseClient
+            .from('reports')
+            .update({ status: newStatus })
+            .eq('id', reportId);
 
-    return !error;
+        if (error) console.error('Status update error:', error);
+        return !error;
+    } catch (err) {
+        console.error('Status update exception:', err);
+        return false;
+    }
 }
