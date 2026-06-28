@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Makati Report Hub</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <img src="assets/logo.png" alt="Logo">
+            <strong>REPORT HUB</strong>
+        </div>
+        <div class="nav-links">
+            <a href="dashboard.html">Home</a>
+            <a href="submit-report.html">Submit Report</a>
+            <a href="dashboard.html">My Reports</a>
+            <a href="#">Profile</a>
+            <a href="#" onclick="logout(); return false;">Log out</a>
+        </div>
+        <div class="nav-contact">
+            <span>📞 Department of Environmental Services: 8899-9057</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="dashboard-header">
+            <h2 id="welcomeText">Welcome Citizen!</h2>
+        </div>
+
+        <div id="successMsg" style="color: green; margin-bottom: 2rem; background: #bbf7d0; padding: 1rem; border-radius: 10px; display: none;"></div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Reports Submitted</h3>
+                <div class="value" id="statTotal">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Pending</h3>
+                <div class="value" id="statPending">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>In progress</h3>
+                <div class="value" id="statProgress">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Resolved</h3>
+                <div class="value" id="statResolved">-</div>
+            </div>
+        </div>
+
+        <div style="margin-bottom: 2rem;">
+            <a href="submit-report.html" class="btn">Submit a new report</a>
+        </div>
+
+        <h3 style="margin-bottom: 1rem; color: var(--primary-color);">Recent Reports</h3>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Issue Type</th>
+                        <th>Location</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="reportsBody">
+                    <tr><td colspan="5" style="text-align: center;">Loading online data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const user = getCurrentUser();
+        if (!user || user.role === 'admin') {
+            window.location.href = 'index.html';
+        }
+
+        document.getElementById('welcomeText').textContent = `Welcome ${user.firstName}!`;
+
+        if (window.location.search.includes('submitted=true')) {
+            const s = document.getElementById('successMsg');
+            s.textContent = 'Report submitted online successfully!';
+            s.style.display = 'block';
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        async function loadDashboard() {
+            const userReports = await getReports(user.id);
+
+            document.getElementById('statTotal').textContent = userReports.length;
+            document.getElementById('statPending').textContent = userReports.filter(r => r.status === 'Pending').length;
+            document.getElementById('statProgress').textContent = userReports.filter(r => r.status === 'In Progress').length;
+            document.getElementById('statResolved').textContent = userReports.filter(r => r.status === 'Resolved').length;
+
+            const tbody = document.getElementById('reportsBody');
+            tbody.innerHTML = '';
+
+            if (userReports.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No reports submitted yet.</td></tr>';
+            } else {
+                userReports.slice(0, 5).forEach(r => {
+                    const tr = document.createElement('tr');
+                    const statusClass = r.status.toLowerCase().replace(' ', '');
+                    tr.innerHTML = `
+                        <td>#${String(r.id).padStart(3, '0')}</td>
+                        <td>${r.issue_type}</td>
+                        <td>${r.location}</td>
+                        <td>${r.date || 'Recent'}</td>
+                        <td><span class="status-badge status-${statusClass}">${r.status}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        loadDashboard();
+    </script>
+</body>
+</html>

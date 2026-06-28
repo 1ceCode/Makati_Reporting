@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Makati Report Hub</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .admin-nav {
+            background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+        }
+        .status-select {
+            padding: 0.3rem;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar admin-nav">
+        <div class="nav-brand">
+            <img src="assets/logo.png" alt="Logo">
+            <strong>REPORT HUB - CITY ADMIN</strong>
+        </div>
+        <div class="nav-links">
+            <a href="admin_dashboard.html">All Reports</a>
+            <a href="#" onclick="logout(); return false;">Log out</a>
+        </div>
+        <div class="nav-contact">
+            <span>🛡️ Logged in as Administrator</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="dashboard-header">
+            <h2>Makati Command Center (Cloud SQL)</h2>
+            <p style="color: var(--text-dark);">Review and manage live citizen environmental reports across all barangays.</p>
+        </div>
+
+        <div id="statusMsg" style="color: green; margin-bottom: 1.5rem; display: none;"></div>
+
+        <div class="stats-grid">
+            <div class="stat-card" style="background: rgba(30, 58, 138, 0.8);">
+                <h3>Total City Reports</h3>
+                <div class="value" id="statTotal">-</div>
+            </div>
+            <div class="stat-card" style="background: rgba(133, 77, 14, 0.8);">
+                <h3>Pending Action</h3>
+                <div class="value" id="statPending">-</div>
+            </div>
+            <div class="stat-card" style="background: rgba(30, 64, 175, 0.8);">
+                <h3>In Progress</h3>
+                <div class="value" id="statProgress">-</div>
+            </div>
+            <div class="stat-card" style="background: rgba(22, 101, 52, 0.8);">
+                <h3>Resolved</h3>
+                <div class="value" id="statResolved">-</div>
+            </div>
+        </div>
+
+        <h3 style="margin-bottom: 1rem; color: var(--primary-color);">All Submitted Issues (Live)</h3>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Citizen</th>
+                        <th>Contact</th>
+                        <th>Issue</th>
+                        <th>Location</th>
+                        <th>Photo</th>
+                        <th>Status Action</th>
+                    </tr>
+                </thead>
+                <tbody id="adminReportsBody">
+                    <tr><td colspan="7" style="text-align: center;">Fetching live database reports...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const user = getCurrentUser();
+        if (!user || user.role !== 'admin') {
+            window.location.href = 'index.html';
+        }
+
+        async function renderAdminDashboard() {
+            const reports = await getReports();
+
+            document.getElementById('statTotal').textContent = reports.length;
+            document.getElementById('statPending').textContent = reports.filter(r => r.status === 'Pending').length;
+            document.getElementById('statProgress').textContent = reports.filter(r => r.status === 'In Progress').length;
+            document.getElementById('statResolved').textContent = reports.filter(r => r.status === 'Resolved').length;
+
+            const tbody = document.getElementById('adminReportsBody');
+            tbody.innerHTML = '';
+
+            if (reports.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No city reports found online.</td></tr>';
+            } else {
+                reports.forEach(r => {
+                    const tr = document.createElement('tr');
+                    const imgHtml = r.image ? `<a href="${r.image}" target="_blank" style="color:var(--primary-color);">[View Photo]</a>` : '<span style="color:gray;">None</span>';
+                    
+                    tr.innerHTML = `
+                        <td>#${String(r.id).padStart(3, '0')}</td>
+                        <td>${r.citizen_name}</td>
+                        <td>${r.citizen_contact}</td>
+                        <td>
+                            <strong>${r.issue_type}</strong>
+                            <p style="font-size:0.85rem; margin-top:0.3rem;">${r.description}</p>
+                        </td>
+                        <td>${r.location}</td>
+                        <td>${imgHtml}</td>
+                        <td>
+                            <div style="display:flex; gap:0.5rem; align-items:center;">
+                                <select class="status-select" onchange="handleStatusChange(${r.id}, this.value)">
+                                    <option value="Pending" ${r.status === 'Pending' ? 'selected' : ''}>Pending</option>
+                                    <option value="In Progress" ${r.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                                    <option value="Resolved" ${r.status === 'Resolved' ? 'selected' : ''}>Resolved</option>
+                                </select>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        window.handleStatusChange = async function(id, newStatus) {
+            if (await updateReportStatus(id, newStatus)) {
+                const msg = document.getElementById('statusMsg');
+                msg.textContent = `Report #${id} status updated to ${newStatus} online.`;
+                msg.style.display = 'block';
+                renderAdminDashboard();
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        };
+
+        renderAdminDashboard();
+    </script>
+</body>
+</html>
